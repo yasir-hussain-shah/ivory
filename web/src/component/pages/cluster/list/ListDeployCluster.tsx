@@ -12,6 +12,7 @@ import {Plugin as KeeperPlugin} from "../../../../api/keeper/type"
 import {VaultType} from "../../../../api/vault/type"
 import {SxPropsMap} from "../../../../app/type"
 import {getInterpolatedString, getNodeConfigs, VaultOptions} from "../../../../app/utils"
+import scroll from "../../../../style/scroll.module.css"
 import {AlertCentered} from "../../../view/box/AlertCentered"
 import {Code} from "../../../view/box/Code"
 import {SubContentBox} from "../../../view/box/SubContentBox"
@@ -31,6 +32,8 @@ const SX: SxPropsMap = {
     subContent: {display: "flex", flexDirection: "column"},
     toggleButton: {padding: "0px 10px"},
     input: {height: "40px"},
+    logs: {colorScheme: "dark", fontSize: "13px"},
+    row: {"&:hover": {color: "primary.main"}},
 }
 
 const INITIAL_OPTIONS: ClusterOptions = {
@@ -85,14 +88,16 @@ export function ListDeployCluster(props: Props) {
     const [db, setDb] = useState<"new" | "vault">("new")
     const [dbCred, setDbCred] = useState({username: image.defaultValues["username"] ?? "", password: image.defaultValues["password"] ?? ""})
     const [open, setOpen] = useState(false)
+    const [response, setResponse] = useState<string[] | undefined>(undefined)
 
-    const {mutate, isPending} = useRouterClusterDeploy(() => setOpen(false))
+    const {mutate, isPending} = useRouterClusterDeploy(setResponse)
 
     const handleImageUpdate = useCallback(handleCallImageUpdate, [])
     const handleVaultUpdate = useCallback(handleCallVaultUpdate, [])
     const handleOptionsUpdate = useCallback(handleCallOptionsUpdate, [])
     const handleEnvUpdates = useCallback(handleCallEnvUpdates, [])
     const handleNodesUpdate = useCallback(handleCallNodesUpdate, [image.optionStr])
+    const handleClose = useCallback(handleCallClose, [])
 
     const imageOptionEntries = useMemo(handleMemoImageOptionEntries, [imageOptions])
     const imageInterpolatedOptions = useMemo(handleMemoImageInterpolatedOptions, [imageOptionEntries, name, dbCred])
@@ -100,24 +105,40 @@ export function ListDeployCluster(props: Props) {
     return (
         <Access feature={Feature.ManageClusterCreate}>
             <DeployIconButton tooltip={"Deploy Cluster"} size={size} onClick={() => setOpen(!open)}/>
-            <Dialog sx={SX.dialog} open={open} onClose={() => setOpen(false)}>
+            <Dialog sx={SX.dialog} open={open} onClose={handleClose}>
                 <DialogTitle sx={SX.center}>Deploy Cluster</DialogTitle>
                 <DialogContent sx={SX.content}>
-                    <AlertCentered text={`
-                        You can deploy the cluster from scratch here, just providing list of virtual machines with
-                        same ssh credentials or generate ssh key in vaults and choose it here. When you provide
-                        ssh credentials Ivory will automatically generate ssh key in vault and add it to authorised
-                        keys in your VMs.
-                        
-                        All is preconfigured for you, but you can always change all configs.
-                    `}/>
-                    {renderMandatoryFields()}
-                    {renderDockerImage()}
-                    {renderClusterOptions()}
+                    {response ? (
+                        <Box sx={SX.logs} className={scroll.small}>
+                            {response.map((log, i) => (
+                                <Box key={i} sx={SX.row}>{log}</Box>
+                            ))}
+                        </Box>
+                    ) : (
+                        <Box sx={SX.subContent} gap={1}>
+                            <AlertCentered text={`
+                                You can deploy the cluster from scratch here, just providing list of virtual machines with
+                                same ssh credentials or generate ssh key in vaults and choose it here. When you provide
+                                ssh credentials Ivory will automatically generate ssh key in vault and add it to authorised
+                                keys in your VMs.
+                                
+                                All is preconfigured for you, but you can always change all configs.
+                            `}/>
+                            {renderMandatoryFields()}
+                            {renderDockerImage()}
+                            {renderClusterOptions()}
+                        </Box>
+                    )}
                 </DialogContent>
                 <DialogActions sx={SX.center}>
-                    <Button color={"inherit"} onClick={() => setOpen(false)}>Cancel</Button>
-                    <Button loading={isPending} onClick={handleDeploy} disabled={!name}>Deploy</Button>
+                    {response ? (
+                        <Button color={"primary"} onClick={handleClose}>Close</Button>
+                    ) : (
+                        <>
+                            <Button color={"inherit"} onClick={handleClose}>Cancel</Button>
+                            <Button loading={isPending} onClick={handleDeploy} disabled={!name}>Deploy</Button>
+                        </>
+                    )}
                 </DialogActions>
             </Dialog>
         </Access>
@@ -299,6 +320,11 @@ export function ListDeployCluster(props: Props) {
         ))
     }
 
+    function handleCallClose() {
+        setOpen(false)
+        setResponse(undefined)
+    }
+
     function handleCallImageUpdate(uri: string) {
         setImage(prev => ({...prev, uri}))
     }
@@ -316,7 +342,7 @@ export function ListDeployCluster(props: Props) {
         const imageOptionsSmallKeys = Object.fromEntries(
             Object.entries(imageOptions).map(([nodeFull, opt]) => {
                 const [host, keeperPort] = nodeFull.split(":")
-                const node = `${host}:${keeperPort ?? ""}`
+                const node = keeperPort ? `${host}:${keeperPort}` : host
                 return [node, opt]
             })
         )
